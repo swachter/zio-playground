@@ -1,69 +1,21 @@
 package eu.swdev.zioplayground
 
 import doobie.free.connection.ConnectionIO
-import zio.blocking.Blocking
-import zio.internal.Platform
-import zio._
-
-import scala.concurrent.ExecutionContext
 import doobie.implicits._
+import zio._
+import zio.blocking.Blocking
 import zio.console.Console
 
 /**
- * Sample application that uses Doobie
- *
- * A Doobie transactor is provided by a layer.
- */
+  * Sample application that uses a Doobie transactor to access a database
+  */
 object RelDb extends zio.App {
 
-  case class DbConfig(url: String, user: String, password: String)
+  case class Configuration(
+      dataSource: DataSource.Config
+  )
 
-  val configurationLayer = ZLayer.succeed(DbConfig("jdbc:h2:~/test;DB_CLOSE_DELAY=-1", "", ""))
-
-  type DbConfiguration = Has[DbConfig]
-
-  object Transactor {
-
-    import doobie.{Transactor => DoobieTransactor}
-
-    trait Service {
-
-      def transact[A](ma: ConnectionIO[A]): Task[A]
-
-    }
-
-    class Live(doobieTransactor: DoobieTransactor[Task]) extends Service {
-      import zio.interop.catz._
-      override def transact[A](ma: ConnectionIO[A]): Task[A] = doobieTransactor.trans.apply(ma)
-    }
-
-    def h2Transactor(
-        conf: DbConfig,
-        connectEC: ExecutionContext,
-        blockingEC: ExecutionContext
-    ): Managed[Throwable, Service] = {
-      import org.h2.jdbcx.JdbcConnectionPool
-      val blocker = cats.effect.Blocker.liftExecutionContext(blockingEC)
-      import zio.interop.catz._
-      Managed
-        .makeEffect(JdbcConnectionPool.create(conf.url, conf.user, conf.password))(_.dispose())
-        .map(cp => new Live(DoobieTransactor.fromDataSource[Task](cp, connectEC, blocker)))
-    }
-
-    val getTransactor = ZIO.access[Transactor](_.get)
-
-  }
-
-  type Transactor = Has[Transactor.Service]
-
-  // provide a Transactor.Service base on the database configuration and Blocking.Service
-  // TODO: Unfortunately the type annotations are required to guide type derivation; is this really required?
-  val h2TransactorLayer =
-    ZLayer.fromServicesManaged[DbConfig, Blocking.Service, Any, Throwable, Transactor.Service] {
-      (config: DbConfig, blockingService: Blocking.Service) =>
-        // TODO: is it correct to use the Platform default executor here?
-        Transactor.h2Transactor(config, Platform.default.executor.asEC, blockingService.blockingExecutor.asEC)
-    }
+  val configurationLayer = ZLayer.succeed(Configuration(DataSource.H2Config("jdbc:h2:~/test;DB_CLOSE_DELAY=-1", "", "")))
 
   // some example database programs from the Doobie documentation https://tpolecat.github.io/doobie/docs/03-Connecting.html
 
@@ -89,7 +41,7 @@ object RelDb extends zio.App {
 
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
 
-    val prog: ZIO[Transactor with Console, Throwable, Unit] = for {
+    val prog: ZIO[Transactor.Transactor with Console, Throwable, Unit] = for {
       transactor <- Transactor.getTransactor
       value1     <- transactor.transact(program1)
       _          <- console.putStrLn(s"value1: $value1")
@@ -103,11 +55,11 @@ object RelDb extends zio.App {
       ()
     }
 
-    // TODO: Is this the correct way to wire the necessary layers
-    val customLayer = (ZLayer.requires[Blocking] ++ configurationLayer) >>> h2TransactorLayer
+    val dataSourceLayer = configurationLayer.map(h => Has(h.get.dataSource)) >>> DataSource.layer
+    val transactorLayer = dataSourceLayer ++ ZLayer.requires[Blocking] >>> Transactor.layer
 
     prog
-      .provideCustomLayer(customLayer)
+      .provideCustomLayer(transactorLayer)
       .as(0)
       .catchAll {
         case t =>
