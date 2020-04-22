@@ -15,7 +15,7 @@ object RelDb extends zio.App {
       dataSource: DataSource.Config
   )
 
-  val configurationLayer = ZLayer.succeed(Configuration(DataSource.H2Config("jdbc:h2:~/test;DB_CLOSE_DELAY=-1", "", "")))
+  val configurationLayer = ZLayer.succeed(Configuration(DataSource.H2Config("jdbc:h2:mem:", "", "")))
 
   // some example database programs from the Doobie documentation https://tpolecat.github.io/doobie/docs/03-Connecting.html
 

@@ -18,5 +18,6 @@ libraryDependencies += "org.tpolecat" %% "doobie-core"     % doobieVersion
 libraryDependencies += "org.tpolecat" %% "doobie-h2"       % doobieVersion
 libraryDependencies += "org.tpolecat" %% "doobie-hikari"   % doobieVersion
 libraryDependencies += "org.tpolecat" %% "doobie-postgres" % doobieVersion
+libraryDependencies += "org.tpolecat" %% "doobie-quill"    % doobieVersion
 
 libraryDependencies += "dev.zio" %% "zio-interop-cats" % "2.0.0.0-RC12"
